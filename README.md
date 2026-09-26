@@ -235,8 +235,17 @@ in the current workload, per algorithm.
 
 ## 12. Screenshots
 
-*(Add screenshots of the hero section, the live race, and the comparison
-dashboard here before publishing.)*
+### Hero — all six algorithms previewed live
+![Hero section](hero.png)
+
+### The race — six lanes, live ready queue, context switches
+![Live race in action](race.png)
+
+### Performance comparison — lowest/highest per metric, no overall winner
+![Performance comparison](compare.png)
+
+### "Why did this happen?" — explanations generated from the actual run
+![Explainability section](insights.png)
 
 ## 13. Future scope
 
