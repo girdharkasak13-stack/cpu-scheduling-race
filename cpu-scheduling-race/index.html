@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>CPU Scheduling Race Visualizer</title>
+  <meta name="description" content="An Operating Systems CPU scheduling simulator and visual analyzer: compare FCFS, SJF, SRTF, Priority, Priority (Preemptive) and Round Robin on the same workload with live Gantt charts and per-metric comparisons.">
+  <meta name="color-scheme" content="light dark">
+
+  <!-- Fonts are optional: if they cannot load (offline), the page falls back to system fonts. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+
+  <!-- Apply the saved (or system) theme before first paint to avoid a flash. -->
+  <script>
+    (function () {
+      var theme = 'light';
+      try {
+        var saved = localStorage.getItem('csrv-theme');
+        if (saved === 'dark' || saved === 'light') theme = saved;
+        else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) theme = 'dark';
+      } catch (e) {}
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#input">Skip to process input</a>
+
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 32 32" width="30" height="30" aria-hidden="true">
+          <rect x="1" y="3" width="30" height="26" rx="8" fill="var(--accent-soft)"/>
+          <rect x="6" y="8" width="13" height="4" rx="2" fill="var(--c-fcfs)"/>
+          <rect x="6" y="14" width="9" height="4" rx="2" fill="var(--c-sjf)"/>
+          <rect x="17" y="14" width="9" height="4" rx="2" fill="var(--c-rr)"/>
+          <rect x="6" y="20" width="6" height="4" rx="2" fill="var(--c-prio)"/>
+          <rect x="14" y="20" width="6" height="4" rx="2" fill="var(--c-prioP)" opacity=".85"/>
+        </svg>
+        <span class="brand-text">CPU Scheduling Simulator &amp; Visual Analyzer</span>
+      </div>
+      <button id="theme-toggle" class="icon-btn icon-btn--lg" type="button" aria-label="Switch to dark mode"></button>
+    </div>
+  </header>
+
+  <main>
+    <noscript><p class="wrap noscript">This visualizer needs JavaScript to run the scheduling simulation.</p></noscript>
+
+    <!-- 1. Hero -->
+    <section class="hero wrap" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <h1 id="hero-title">CPU Scheduling <span class="h1-accent">Race</span> Visualizer</h1>
+        <p class="hero-sub">See how six different scheduling algorithms handle the same workload &mdash; and compare any subset of them side by side.</p>
+        <div class="hero-actions">
+          <button id="hero-run" class="btn btn-primary btn-lg" type="button">Run Race <span aria-hidden="true">🚀</span></button>
+          <a class="btn btn-ghost btn-lg" href="#input">Edit processes</a>
+        </div>
+        <p class="hero-note">No overall winner is declared. For each metric, the page shows which algorithm is lowest or highest for your workload, because no scheduler is best for every workload.</p>
+      </div>
+
+      <!-- Decorative: the live preview sits on a chip package (pins and faint circuit traces). -->
+      <div class="hero-visual" aria-hidden="true">
+        <svg class="traces" viewBox="0 0 600 420" preserveAspectRatio="xMidYMid slice" focusable="false">
+          <g fill="none" stroke="var(--line-strong)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M0 96H60V132H170"/>
+            <path d="M0 188H130"/>
+            <path d="M14 250H70V286H180"/>
+            <path d="M0 338H100"/>
+            <path d="M600 84H540V118H430"/>
+            <path d="M600 176H470"/>
+            <path d="M586 246H530V282H420"/>
+            <path d="M600 334H500"/>
+            <path d="M170 0V52H230V120"/>
+            <path d="M360 0V40H320V110"/>
+            <path d="M250 420V366H300V300"/>
+            <path d="M420 420V378H460V290"/>
+          </g>
+          <g fill="var(--bg)" stroke="var(--line-strong)" stroke-width="1.5">
+            <circle cx="60" cy="132" r="3.5"/><circle cx="540" cy="118" r="3.5"/>
+            <circle cx="70" cy="286" r="3.5"/><circle cx="530" cy="282" r="3.5"/>
+            <circle cx="230" cy="52" r="3.5"/><circle cx="460" cy="378" r="3.5"/>
+          </g>
+        </svg>
+
+        <div class="preview">
+          <span class="chip-notch"></span>
+          <div class="preview-head">
+            <span class="preview-icon" data-icon="cpu"></span>
+            <p class="preview-title">Your current workload, scheduled several ways</p>
+          </div>
+          <div id="hero-lanes" class="preview-lanes"></div>
+          <p id="hero-caption" class="preview-caption"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. Process input -->
+    <section id="input" class="section wrap" aria-labelledby="input-title">
+      <div class="section-head">
+        <h2 id="input-title" tabindex="-1">Your processes</h2>
+        <p>Every selected algorithm runs this same list. Edit it, generate a random one, or start from the sample data.</p>
+      </div>
+
+      <div class="panel input-grid">
+        <div class="input-side">
+          <form id="process-form" class="process-form" novalidate>
+            <h3>Add a process</h3>
+            <div class="field">
+              <div class="field-label"><label for="pid">Process ID</label></div>
+              <input id="pid" name="pid" type="text" maxlength="8" autocomplete="off" spellcheck="false">
+              <p class="field-error" id="err-pid" hidden></p>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <div class="field-label">
+                  <label for="arrival">Arrival time</label>
+                  <button type="button" class="term-btn" data-tip="The time a process enters the ready queue." aria-describedby="tooltip" aria-label="What is arrival time?">?</button>
+                </div>
+                <input id="arrival" name="arrival" type="text" inputmode="numeric" autocomplete="off" placeholder="0">
+                <p class="field-error" id="err-arrival" hidden></p>
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="burst">Burst time</label>
+                  <button type="button" class="term-btn" data-tip="The total CPU time a process needs to finish." aria-describedby="tooltip" aria-label="What is burst time?">?</button>
+                </div>
+                <input id="burst" name="burst" type="text" inputmode="numeric" autocomplete="off" placeholder="5">
+                <p class="field-error" id="err-burst" hidden></p>
+              </div>
+            </div>
+            <div class="field">
+              <div class="field-label">
+                <label for="priority">Priority</label>
+                <button type="button" class="term-btn" data-tip="A number used to rank processes. Lower is higher priority: 1 is the highest priority a process can have." aria-describedby="tooltip" aria-label="What is priority?">?</button>
+              </div>
+              <input id="priority" name="priority" type="text" inputmode="numeric" autocomplete="off" placeholder="1">
+              <p class="field-error" id="err-priority" hidden></p>
+              <p class="field-hint">Lower number = higher priority (1 is highest). Only used by the two Priority algorithms.</p>
+            </div>
+            <button class="btn btn-secondary" type="submit"><span data-icon="plus"></span>Add process</button>
+            <p id="form-msg" class="msg" role="alert" hidden></p>
+          </form>
+
+          <div class="quantum-block">
+            <div class="field">
+              <div class="field-label">
+                <label for="quantum">Time quantum (Round Robin)</label>
+                <button type="button" class="term-btn" data-tip="The longest a process may run in Round Robin before the next ready process gets a turn." aria-describedby="tooltip" aria-label="What is a time quantum?">?</button>
+              </div>
+              <input id="quantum" name="quantum" type="text" inputmode="numeric" autocomplete="off" value="3">
+              <p class="field-error" id="err-quantum" hidden role="alert"></p>
+            </div>
+          </div>
+
+          <div class="algo-select-block">
+            <div class="field-label"><span>Algorithms to compare</span></div>
+            <div id="algo-toggles" class="algo-toggles" role="group" aria-label="Algorithms to compare">
+              <label class="algo-toggle" data-algo="fcfs"><input type="checkbox" name="algo" value="fcfs" checked><span><i class="dot" style="background:var(--c-fcfs)"></i>FCFS</span></label>
+              <label class="algo-toggle" data-algo="sjf"><input type="checkbox" name="algo" value="sjf" checked><span><i class="dot" style="background:var(--c-sjf)"></i>SJF</span></label>
+              <label class="algo-toggle" data-algo="srtf"><input type="checkbox" name="algo" value="srtf" checked><span><i class="dot" style="background:var(--c-srtf)"></i>SRTF</span></label>
+              <label class="algo-toggle" data-algo="prio"><input type="checkbox" name="algo" value="prio" checked><span><i class="dot" style="background:var(--c-prio)"></i>Priority</span></label>
+              <label class="algo-toggle" data-algo="prioP"><input type="checkbox" name="algo" value="prioP" checked><span><i class="dot" style="background:var(--c-prioP)"></i>Priority (P)</span></label>
+              <label class="algo-toggle" data-algo="rr"><input type="checkbox" name="algo" value="rr" checked><span><i class="dot" style="background:var(--c-rr)"></i>Round Robin</span></label>
+            </div>
+            <p class="field-hint">Choose 2 to 6 algorithms to run on the same workload and compare (this is the app's compare mode).</p>
+            <p id="algo-summary" class="algo-summary"></p>
+            <p id="algo-msg" class="field-error" hidden role="alert"></p>
+          </div>
+        </div>
+
+        <div class="input-main">
+          <div class="list-toolbar">
+            <button id="sample-btn" class="btn btn-secondary btn-sm" type="button"><span data-icon="list"></span>Load sample data</button>
+            <button id="random-btn" class="btn btn-secondary btn-sm" type="button"><span data-icon="shuffle"></span>Random processes</button>
+            <button id="clear-btn" class="btn btn-ghost btn-sm" type="button"><span data-icon="trash"></span>Clear all</button>
+          </div>
+
+          <div id="table-wrap" class="table-scroll table-scroll--plain">
+            <table class="data-table process-table">
+              <caption class="sr-only">Process list</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Process</th>
+                  <th scope="col">Arrival</th>
+                  <th scope="col">Burst</th>
+                  <th scope="col">Priority</th>
+                  <th scope="col"><span class="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody id="process-rows"></tbody>
+            </table>
+          </div>
+          <p id="process-empty" class="empty" hidden>No processes yet. Add one with the form, or press <strong>Load sample data</strong> to see the visualizer working.</p>
+
+          <div class="list-foot">
+            <span id="process-count" class="muted"></span>
+            <p id="table-msg" class="msg" role="status" hidden></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Algorithm cards -->
+    <section id="algorithms" class="section wrap" aria-labelledby="algo-title">
+      <div class="section-head">
+        <h2 id="algo-title">Six ways to share one CPU</h2>
+        <p>Each diagram runs the same tiny workload (arrivals staggered on purpose), so you can see how the order &mdash; and, for the preemptive algorithms, the interruptions &mdash; change.</p>
+      </div>
+
+      <div class="algo-grid">
+        <article class="algo-card" data-algo="fcfs">
+          <div class="mini" data-mini="fcfs" aria-hidden="true"></div>
+          <div class="mini-meta" data-mini-meta="fcfs"></div>
+          <h3>FCFS</h3>
+          <p class="algo-tagline">First Come, First Served</p>
+          <p>Processes are executed in the order in which they arrive.</p>
+          <dl class="algo-facts">
+            <div><dt>Type</dt><dd><button type="button" class="term" data-tip="Non-preemptive: once a process starts, it keeps the CPU until it finishes." aria-describedby="tooltip">Non-preemptive</button></dd></div>
+            <div><dt>Selects by</dt><dd>Arrival time (first in, first served)</dd></div>
+          </dl>
+          <details class="algo-details">
+            <summary>Advantages, limitations &amp; best use</summary>
+            <h4>Advantages</h4>
+            <ul><li>Simple to implement and to reason about</li><li>No starvation: every process eventually runs</li></ul>
+            <h4>Limitations</h4>
+            <ul><li>The "convoy effect": one long job delays every job behind it</li><li>Average waiting time is often far from optimal</li></ul>
+            <p><strong>Best for:</strong> batch systems with no interactivity requirement, or as a fair baseline to compare other algorithms against.</p>
+          </details>
+        </article>
+
+        <article class="algo-card" data-algo="sjf">
+          <div class="mini" data-mini="sjf" aria-hidden="true"></div>
+          <div class="mini-meta" data-mini-meta="sjf"></div>
+          <h3>SJF</h3>
+          <p class="algo-tagline">Shortest Job First</p>
+          <p>Among available processes, the one with the shortest burst time is selected.</p>
+          <dl class="algo-facts">
+            <div><dt>Type</dt><dd><button type="button" class="term" data-tip="Non-preemptive: once a process starts, it keeps the CPU until it finishes." aria-describedby="tooltip">Non-preemptive</button></dd></div>
+            <div><dt>Selects by</dt><dd>Shortest burst time among ready processes</dd></div>
+          </dl>
+          <details class="algo-details">
+            <summary>Advantages, limitations &amp; best use</summary>
+            <h4>Advantages</h4>
+            <ul><li>Provably minimizes average waiting time among non-preemptive algorithms</li></ul>
+            <h4>Limitations</h4>
+            <ul><li>Can starve long processes if short ones keep arriving</li><li>Needs the burst time in advance, which real systems must estimate</li></ul>
+            <p><strong>Best for:</strong> batch workloads where burst times are known or predictable ahead of time.</p>
+          </details>
+        </article>
+
+        <article class="algo-card" data-algo="srtf">
+          <div class="mini" data-mini="srtf" aria-hidden="true"></div>
+          <div class="mini-meta" data-mini-meta="srtf"></div>
+          <h3>SRTF</h3>
+          <p class="algo-tagline">Shortest Remaining Time First</p>
+          <p>The preemptive version of SJF: whenever a new process arrives with less remaining work than the one running, it takes over.</p>
+          <dl class="algo-facts">
+            <div><dt>Type</dt><dd><button type="button" class="term" data-tip="Preemptive: a running process can be interrupted so another one can use the CPU." aria-describedby="tooltip">Preemptive</button></dd></div>
+            <div><dt>Selects by</dt><dd>Shortest remaining burst time, re-checked on every arrival</dd></div>
+          </dl>
+          <details class="algo-details">
+            <summary>Advantages, limitations &amp; best use</summary>
+            <h4>Advantages</h4>
+            <ul><li>Optimal average waiting time among all scheduling algorithms for a given arrival pattern</li><li>Reacts immediately to newly arrived short jobs</li></ul>
+            <h4>Limitations</h4>
+            <ul><li>Can starve long processes under heavy load</li><li>Frequent preemption adds real-world context-switch overhead</li></ul>
+            <p><strong>Best for:</strong> workloads with mixed job lengths where minimizing average waiting time matters more than fairness.</p>
+          </details>
+        </article>
+
+        <article class="algo-card" data-algo="prio">
+          <div class="mini" data-mini="prio" aria-hidden="true"></div>
+          <div class="mini-meta" data-mini-meta="prio"></div>
+          <h3>Priority</h3>
+          <p class="algo-tagline">Priority Scheduling</p>
+          <p>Among available processes, the one with the best (lowest-numbered) priority is selected.</p>
+          <dl class="algo-facts">
+            <div><dt>Type</dt><dd><button type="button" class="term" data-tip="Non-preemptive: once a process starts, it keeps the CPU until it finishes." aria-describedby="tooltip">Non-preemptive</button></dd></div>
+            <div><dt>Selects by</dt><dd>Lowest priority number among ready processes (1 = highest priority)</dd></div>
+          </dl>
+          <details class="algo-details">
+            <summary>Advantages, limitations &amp; best use</summary>
+            <h4>Advantages</h4>
+            <ul><li>Lets important work (e.g. system tasks) go first, by design</li></ul>
+            <h4>Limitations</h4>
+            <ul><li>Low-priority processes can starve indefinitely without aging</li><li>Priority still has to be assigned by someone, correctly</li></ul>
+            <p><strong>Best for:</strong> systems where some processes are genuinely more important than others, such as real-time or system-critical tasks.</p>
+          </details>
+        </article>
+
+        <article class="algo-card" data-algo="prioP">
+          <div class="mini" data-mini="prioP" aria-hidden="true"></div>
+          <div class="mini-meta" data-mini-meta="prioP"></div>
+          <h3>Priority (P)</h3>
+          <p class="algo-tagline">Priority Scheduling, Preemptive</p>
+          <p>The preemptive version of Priority: a running process is interrupted the moment a higher-priority one arrives.</p>
+          <dl class="algo-facts">
+            <div><dt>Type</dt><dd><button type="button" class="term" data-tip="Preemptive: a running process can be interrupted so another one can use the CPU." aria-describedby="tooltip">Preemptive</button></dd></div>
+            <div><dt>Selects by</dt><dd>Lowest priority number, re-checked on every arrival (1 = highest priority)</dd></div>
+          </dl>
+          <details class="algo-details">
+            <summary>Advantages, limitations &amp; best use</summary>
+            <h4>Advantages</h4>
+            <ul><li>High-priority work gets the CPU almost immediately, even mid-execution</li></ul>
+            <h4>Limitations</h4>
+            <ul><li>Even more prone to starving low-priority processes than the non-preemptive version</li><li>More context switches than non-preemptive priority scheduling</li></ul>
+            <p><strong>Best for:</strong> soft real-time systems where urgent work must interrupt less-urgent work immediately.</p>
+          </details>
+        </article>
+
+        <article class="algo-card" data-algo="rr">
+          <div class="mini" data-mini="rr" aria-hidden="true"></div>
+          <div class="mini-meta" data-mini-meta="rr"></div>
+          <h3>Round Robin</h3>
+          <p class="algo-tagline">Fair Time Sharing</p>
+          <p>Each process receives a fixed time quantum before the scheduler moves to another process.</p>
+          <dl class="algo-facts">
+            <div><dt>Type</dt><dd><button type="button" class="term" data-tip="Preemptive: a running process can be interrupted so another one can use the CPU." aria-describedby="tooltip">Preemptive</button></dd></div>
+            <div><dt>Selects by</dt><dd>Turn order in the ready queue, capped at one time quantum per turn</dd></div>
+          </dl>
+          <details class="algo-details">
+            <summary>Advantages, limitations &amp; best use</summary>
+            <h4>Advantages</h4>
+            <ul><li>No starvation: every ready process gets a turn on a predictable cycle</li><li>Good response time for interactive workloads</li></ul>
+            <h4>Limitations</h4>
+            <ul><li>A quantum that's too small causes excessive context switching</li><li>A quantum that's too large makes it behave like FCFS</li></ul>
+            <p><strong>Best for:</strong> time-sharing and interactive systems where fairness and response time matter more than average turnaround.</p>
+          </details>
+        </article>
+      </div>
+      <p class="grid-note">Diagram workload: A needs 6 (arrives at 0, priority 3), B needs 3 (arrives at 2, priority 1), C needs 2 (arrives at 4, priority 2). Round Robin uses a quantum of 3. The averages shown describe this tiny example only.</p>
+    </section>
+
+    <!-- 4 + 5. Race controls and lanes -->
+    <section id="race" class="section wrap" aria-labelledby="race-title">
+      <div class="section-head">
+        <h2 id="race-title" tabindex="-1">The race</h2>
+        <p>Every selected algorithm gets its own lane on one shared time axis, with its ready queue and running process shown live, so you can compare what each is doing at the same moment.</p>
+      </div>
+
+      <div class="panel race-panel">
+        <div class="race-toolbar" role="group" aria-label="Race controls">
+          <button id="run-btn" class="btn btn-primary" type="button">Run Race <span aria-hidden="true">🚀</span></button>
+          <button id="play-btn" class="btn btn-secondary" type="button" disabled><span data-icon="play"></span>Play Race</button>
+          <button id="restart-btn" class="btn btn-secondary" type="button" disabled><span data-icon="rotate"></span>Restart</button>
+          <button id="reset-btn" class="btn btn-ghost" type="button" disabled>Reset simulation</button>
+
+          <div class="speed" role="radiogroup" aria-label="Animation speed">
+            <span class="speed-label" aria-hidden="true">Speed</span>
+            <div class="segmented">
+              <label class="speed-opt"><input type="radio" name="speed" value="0.5"><span>0.5x</span></label>
+              <label class="speed-opt"><input type="radio" name="speed" value="1" checked><span>1x</span></label>
+              <label class="speed-opt"><input type="radio" name="speed" value="2"><span>2x</span></label>
+            </div>
+          </div>
+        </div>
+
+        <p id="race-msg" class="msg" role="status" hidden></p>
+        <p id="stale-note" class="msg" data-kind="info" role="status" hidden>Your processes, algorithms or quantum changed after this run. Press Run Race to update the charts and results.</p>
+        <p id="race-status" class="sr-only" role="status" aria-live="polite"></p>
+
+        <div id="race-empty" class="empty empty--stage">
+          <p><strong>No race yet.</strong> Press <strong>Run Race</strong> to see every selected algorithm schedule your processes, one lane each, with a live ready queue and running-process indicator.</p>
+        </div>
+
+        <div id="race-stage" hidden>
+          <div class="scrub">
+            <label for="scrubber">Time</label>
+            <input id="scrubber" type="range" min="0" max="1" step="any" value="0" disabled>
+            <output id="clock" for="scrubber"></output>
+          </div>
+          <div class="race-scroll" tabindex="0" role="region" aria-label="Gantt charts. Scroll sideways if the timeline is wide.">
+            <div id="race-lanes"></div>
+          </div>
+          <p class="legend-note">Blocks are colored by process, identically in every lane. Hatched blocks mean the CPU was idle. A small mark above the timeline flags a context switch, and a checkmark appears on a block once its process finishes.</p>
+        </div>
+      </div>
+    </section>
+
+    <div id="results-after" hidden>
+      <!-- 6. Comparison -->
+      <section id="compare" class="section wrap" aria-labelledby="compare-title">
+        <div class="section-head">
+          <h2 id="compare-title">Performance comparison</h2>
+          <p>Each tile compares every selected algorithm on one metric for your current workload. Lowest or highest is not the same as best or worst: it depends on what you care about.</p>
+        </div>
+        <div id="compare-root" class="compare-grid"></div>
+      </section>
+
+      <!-- 7. Detailed metrics -->
+      <section id="metrics" class="section wrap" aria-labelledby="metrics-title">
+        <div class="section-head">
+          <h2 id="metrics-title">Detailed metrics</h2>
+          <p>Every number comes from the Gantt charts above.</p>
+        </div>
+        <div id="metrics-root" class="panel metrics-stack"></div>
+
+        <details class="formulas">
+          <summary>How these numbers are calculated</summary>
+          <ul>
+            <li><strong>Turnaround time</strong> = completion time &minus; arrival time.</li>
+            <li><strong>Waiting time</strong> = turnaround time &minus; burst time.</li>
+            <li><strong>Response time</strong> = first start time &minus; arrival time (the first time the process ever gets the CPU, even under a preemptive algorithm).</li>
+            <li><strong>CPU utilization</strong> = busy time &divide; (last completion &minus; first arrival). Idle gaps between arrivals count as idle.</li>
+            <li><strong>Context switch</strong> = the CPU moving from one process to a different one. The first dispatch is not counted, idle gaps are ignored, and switching costs no time in this simulator.</li>
+            <li><strong>Priority convention:</strong> a lower priority number means a higher priority. Priority 1 always runs before priority 2 when both are ready.</li>
+            <li><strong>Ties</strong> in the non-preemptive algorithms (FCFS, SJF, Priority) go to the earlier arrival, then to the process added first. The preemptive algorithms (SRTF, Priority (P), Round Robin) use the same tie-break when choosing who runs next. In Round Robin, a process that arrives exactly when a quantum ends joins the queue before the preempted process.</li>
+          </ul>
+        </details>
+      </section>
+
+      <!-- 8. Explanation -->
+      <section id="why" class="section wrap" aria-labelledby="why-title">
+        <div class="section-head">
+          <h2 id="why-title">Why did this happen?</h2>
+          <p>Written from your actual results, so it changes when your workload or algorithm selection does.</p>
+        </div>
+        <div class="insight-area">
+          <p id="insights-context" class="insight-context"></p>
+          <ul id="insights-root" class="insights"></ul>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- 9. Footer -->
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>Built with HTML, CSS and vanilla JavaScript. Everything runs in your browser; nothing is sent anywhere. See the README for formulas, architecture and how to run this project.</p>
+    </div>
+  </footer>
+
+  <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+
+  <script src="script.js"></script>
+</body>
+</html>
