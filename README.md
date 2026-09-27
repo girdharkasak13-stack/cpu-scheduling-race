@@ -236,17 +236,15 @@ in the current workload, per algorithm.
 ## 12. Screenshots
 
 ### Hero — all six algorithms previewed live
-![Hero section](hero.png)
+![Hero section](screenshots/hero.png)
 
 ### The race — six lanes, live ready queue, context switches
-![Live race in action](race.png)
-
+![Live race in action](screenshots/race.png)
 ### Performance comparison — lowest/highest per metric, no overall winner
-![Performance comparison](compare.png)
+![Performance comparison](screenshots/compare.png)
 
 ### "Why did this happen?" — explanations generated from the actual run
-![Explainability section](insights.png)
-
+![Explainability section](screenshots/insights.png)
 ## 13. Future scope
 
 - **Aging / dynamic priority**: raise a waiting process's effective priority
